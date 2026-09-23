@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Validação com a Liderança | Sr. Jorge</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="assets/css/form.css">
+<style>
+  .gate-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+  .gate-card{max-width:420px;width:100%}
+  .gate-card .brand-lockup{margin-bottom:16px}
+  .gate-card form{display:flex;flex-direction:column;gap:12px}
+  .gate-error{min-height:1.2em}
+</style>
+</head>
+<body>
+<div class="gate-wrap">
+  <div class="poster-card gate-card">
+    <div class="brand-lockup">
+      <img src="assets/logos/logo-atomica-preta-sem-fundo.png" alt="" class="brand-mark">
+      <span class="brand-wordmark header-wordmark">Atomica</span>
+    </div>
+    <p class="eyebrow">Acesso restrito</p>
+    <h2>Validação com a Liderança</h2>
+    <p>Este formulário é privado. Use a mesma senha do painel do diagnóstico Sr. Jorge.</p>
+    <form id="gate-form">
+      <label for="gate-pw" class="question-label">Senha</label>
+      <input type="password" id="gate-pw" class="field-control" autocomplete="current-password" required autofocus>
+      <button type="submit" class="atomica-button" id="gate-btn">Entrar</button>
+      <span class="error-text gate-error" id="gate-error" role="alert"></span>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+  // Mesma chave de sessionStorage para todos os formulários/painel do Sr. Jorge
+  // (mesma origem iarketinglabs.github.io): digitou uma vez, vale na aba.
+  var SESSION_KEY = "srjorge-forms-password";
+  var form = document.getElementById("gate-form");
+  var pw = document.getElementById("gate-pw");
+  var btn = document.getElementById("gate-btn");
+  var err = document.getElementById("gate-error");
+
+  function b64(s) {
+    var bin = atob(s), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function WrongPassword() {}
+
+  function decrypt(password, p) {
+    var enc = new TextEncoder();
+    return crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"])
+      .then(function (base) {
+        return crypto.subtle.deriveKey(
+          { name: "PBKDF2", salt: b64(p.salt), iterations: p.iterations, hash: "SHA-256" },
+          base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+      })
+      .then(function (key) {
+        return crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(p.iv) }, key, b64(p.data))
+          .catch(function () { throw new WrongPassword(); });
+      })
+      .then(function (buf) { return new TextDecoder().decode(buf); });
+  }
+
+  var payloadPromise = fetch("data.enc", { cache: "no-store" }).then(function (r) {
+    if (!r.ok) throw new Error("fetch " + r.status);
+    return r.json();
+  });
+
+  function unlock(password, silent) {
+    btn.disabled = true; btn.textContent = "A verificar…"; err.textContent = "";
+    return payloadPromise.then(function (p) { return decrypt(password, p); }).then(function (html) {
+      try { sessionStorage.setItem(SESSION_KEY, password); } catch (e) { /* sem sessão */ }
+      document.open(); document.write(html); document.close();
+    }).catch(function (e) {
+      btn.disabled = false; btn.textContent = "Entrar";
+      if (e instanceof WrongPassword) {
+        try { sessionStorage.removeItem(SESSION_KEY); } catch (x) { /* ignora */ }
+        if (!silent) err.textContent = "Senha incorreta.";
+      } else {
+        err.textContent = "Não foi possível carregar o formulário. Verifique a ligação e tente novamente.";
+        console.error(e);
+      }
+    });
+  }
+
+  form.addEventListener("submit", function (ev) { ev.preventDefault(); if (pw.value) unlock(pw.value, false); });
+
+  var saved = null;
+  try { saved = sessionStorage.getItem(SESSION_KEY); } catch (e) { /* ignora */ }
+  if (saved) unlock(saved, true);
+})();
+</script>
+</body>
+</html>
